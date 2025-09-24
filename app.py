@@ -138,7 +138,7 @@ with col_right:
     st.subheader("🤖 AI Response")
     if "last_answer" not in st.session_state:
         st.session_state["last_answer"] = ""
-    answer_box = st.text_area(" ", value=st.session_state["last_answer"], height=160)
+    answer_box = st.text_area(" ", value=st.session_state.get("last_answer", ""), height=160)
 
     st.subheader("🔍 Enter your question")
     q_val = st.text_area("", value=st.session_state.get("question", ""), key="question_input", height=80)
@@ -150,4 +150,3 @@ with col_right:
             answer = chat_with_delivery_data(q_val, df)
             st.session_state["last_answer"] = answer
             st.session_state["question"] = q_val
-            st.experimental_rerun()
