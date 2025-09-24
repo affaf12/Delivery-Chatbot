@@ -97,41 +97,28 @@ st.set_page_config(page_title="🚚 Delivery Data Chatbot", layout="wide")
 st.title("🚚 Delivery Data Chatbot")
 st.markdown("Ask questions about your delivery dataset and get clean, data-driven answers.")
 
-# Sidebar
+# Load dataset directly (no upload/URL)
+DATA_FILE = "Zomato Dataset.csv"
+if not os.path.exists(DATA_FILE):
+    st.error("❌ Dataset not found! Please make sure 'Zomato Dataset.csv' is in the repo.")
+    st.stop()
+
+try:
+    df = pd.read_csv(DATA_FILE)
+except Exception as e:
+    st.error(f"❌ Could not read dataset: {e}")
+    st.stop()
+
+# Sidebar (just options, no upload/url)
 col_left, col_right = st.columns([1, 3])
 
 with col_left:
     st.subheader("📝 Options")
-    uploaded = st.file_uploader("Upload dataset CSV", type=["csv"])
-    raw_url = st.text_input("Or paste raw GitHub CSV URL", "")
 
     with st.expander("📊 Delivery Performance"):
         st.markdown("- Which delivery person is the fastest on average?\n- What is the average delivery time per city?")
     with st.expander("👥 Customer & Order Insights"):
         st.markdown("- What types of orders take the longest?\n- Are deliveries slower during festivals?")
-
-# Load dataset
-DATA_FILE = "Zomato Dataset.csv"
-df = None
-if os.path.exists(DATA_FILE):
-    try:
-        df = pd.read_csv(DATA_FILE)
-    except:
-        st.warning("Could not read local file.")
-if df is None and uploaded is not None:
-    try:
-        df = pd.read_csv(uploaded)
-    except:
-        st.error("Uploaded file could not be read.")
-if df is None and raw_url.strip():
-    try:
-        df = pd.read_csv(raw_url.strip())
-    except:
-        st.error("Could not load CSV from URL.")
-
-if df is None:
-    st.warning("No dataset loaded yet.")
-    st.stop()
 
 # Right panel: Only Answer + Question
 with col_right:
