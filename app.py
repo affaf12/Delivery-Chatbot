@@ -3,6 +3,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import os
+import io
 from math import radians, cos, sin, asin, sqrt
 
 # -------------------------
@@ -46,12 +47,11 @@ def has_answer(val):
         return True
 
 # -------------------------
-# Core Q/A (returns str or DataFrame)
+# Core Q/A (returns str or DataFrame or tuple)
 # -------------------------
 def chat_with_delivery_data(question: str, df: pd.DataFrame):
     q = (question or "").lower().strip()
 
-    # column mapping
     id_col = find_col(df, ["Delivery_person_ID", "delivery_person_id", "Delivery ID", "ID"])
     rating_col = find_col(df, ["Delivery_person_Ratings", "Delivery_person_Rating"])
     time_col = find_col(df, ["Time_taken (min)", "Time_taken_min", "Time_taken", "Time_taken_minutes"])
@@ -66,16 +66,14 @@ def chat_with_delivery_data(question: str, df: pd.DataFrame):
     rest_lon = find_col(df, ["Restaurant_longitude", "restaurant_longitude"])
     del_lat = find_col(df, ["Delivery_location_latitude", "delivery_location_latitude"])
     del_lon = find_col(df, ["Delivery_location_longitude", "delivery_location_longitude"])
-    age_col = find_col(df, ["Delivery_person_Age", "Age"])
+    age_col = find_col(df, ["Delivery_person_Age", "Delivery_person_age", "Age"])
     vehicle_cond_col = find_col(df, ["Vehicle_condition", "vehicle_condition"])
 
-    # numeric time column
-    if time_col:
+    if time_col in df.columns:
         df["_time_numeric_"] = pd.to_numeric(df[time_col], errors="coerce")
     else:
         df["_time_numeric_"] = np.nan
 
-    # distance column
     if rest_lat and rest_lon and del_lat and del_lon:
         df["_distance_km_"] = df.apply(
             lambda r: haversine_km(r[rest_lat], r[rest_lon], r[del_lat], r[del_lon]), axis=1
@@ -83,16 +81,18 @@ def chat_with_delivery_data(question: str, df: pd.DataFrame):
     else:
         df["_distance_km_"] = np.nan
 
-    # ---------- Rules ----------
+    # Highest rating
     if "highest rating" in q:
         if rating_col and id_col:
             nums = pd.to_numeric(df[rating_col], errors="coerce")
             if nums.dropna().empty:
-                return "No numeric rating data."
+                return "No numeric rating data available."
             idx_max = nums.idxmax()
             best_row = df.loc[idx_max]
-            return f"✅ Highest rating: **{best_row.get(id_col)}** — {best_row.get(rating_col)} ⭐"
+            top3 = df.assign(_r=nums).sort_values("_r", ascending=False).head(5)[[id_col, rating_col]]
+            return f"✅ Highest rating: **{best_row[id_col]}** — {best_row[rating_col]} ⭐", top3
 
+    # Fastest on average
     if "fastest" in q:
         if id_col:
             avg_times = df.groupby(id_col)["_time_numeric_"].mean().dropna()
@@ -100,54 +100,29 @@ def chat_with_delivery_data(question: str, df: pd.DataFrame):
                 return "No valid numeric delivery-time data."
             fastest_id = avg_times.idxmin()
             fastest_val = avg_times.min()
-            return f"⚡ Fastest: **{fastest_id}** — {fastest_val:.2f} min"
+            top3 = avg_times.sort_values().head(5).reset_index().rename(columns={"_time_numeric_": "avg_time_min"})
+            top3["avg_time_min"] = top3["avg_time_min"].round(2)
+            return f"⚡ Fastest on average: **{fastest_id}** — {fastest_val:.2f} min", top3
 
+    # Average time per city
     if "average" in q and "city" in q:
         if city_col:
             out = df.groupby(city_col)["_time_numeric_"].mean().reset_index()
-            out["_time_numeric_"] = out["_time_numeric_"].round(2)
-            return out
+            out["avg_time_min"] = out["_time_numeric_"].round(2)
+            return out[[city_col, "avg_time_min"]].sort_values("avg_time_min")
 
-    if "traffic" in q:
-        if traffic_col:
-            out = df.groupby(traffic_col)["_time_numeric_"].mean().reset_index()
-            out["_time_numeric_"] = out["_time_numeric_"].round(2)
-            return out
-
-    if "weather" in q:
-        if weather_col:
-            out = df.groupby(weather_col)["_time_numeric_"].mean().reset_index()
-            out["_time_numeric_"] = out["_time_numeric_"].round(2)
-            return out
-
-    if "age" in q:
-        if age_col:
-            age_num = pd.to_numeric(df[age_col], errors="coerce")
-            corr = age_num.corr(df["_time_numeric_"])
-            return f"👤 Correlation (age vs delivery time): **{(round(corr,2) if not np.isnan(corr) else 'NaN')}**"
-
-    if "vehicle condition" in q:
-        if vehicle_cond_col:
-            out = df.groupby(vehicle_cond_col)["_time_numeric_"].mean().reset_index()
-            out["_time_numeric_"] = out["_time_numeric_"].round(2)
-            return out
-
-    if "distance" in q:
-        if not df["_distance_km_"].isna().all():
-            corr = df["_distance_km_"].corr(df["_time_numeric_"])
-            return f"📍 Correlation (distance vs time): **{(round(corr,2) if not np.isnan(corr) else 'NaN')}**"
-
-    return "❓ I couldn't find an exact answer. Try: *'fastest delivery person'*, *'average per city'*, *'impact of traffic'*."
+    return "❓ I couldn't find an exact answer. Try rephrasing or asking about ratings, fastest deliveries, city averages, etc."
 
 # -------------------------
 # UI
 # -------------------------
 st.set_page_config(page_title="🚚 Delivery Data Chatbot", layout="wide")
 st.title("🚚 Delivery Data Chatbot")
+st.caption("Ask questions about your delivery dataset. The AI Response will always appear above the question box.")
 
 DATA_FILE = "Zomato Dataset.csv"
 if not os.path.exists(DATA_FILE):
-    st.error("❌ Dataset not found! Please put 'Zomato Dataset.csv' in the repo.")
+    st.error("❌ Dataset not found. Put 'Zomato Dataset.csv' in this folder.")
     st.stop()
 
 try:
@@ -158,36 +133,63 @@ except Exception as e:
 
 col_left, col_right = st.columns([1, 3])
 
+# Sidebar with examples
 with col_left:
-    st.subheader("📝 Options")
-    with st.expander("📊 Delivery Performance"):
-        st.markdown("- Which delivery person is the fastest on average?\n- What is the average delivery time per city?")
-    with st.expander("🌍 Environment & External Factors"):
-        st.markdown("- How does traffic density impact delivery time?\n- Do weather conditions affect delivery speed?")
-    with st.expander("🚴 Delivery Personnel Metrics"):
-        st.markdown("- Who has the highest ratings and fastest deliveries?\n- Does the age of the delivery person affect speed?\n- Does vehicle condition impact delivery time?")
-    with st.expander("📍 Geospatial Insights"):
-        st.markdown("- Which areas have the highest delays?\n- What is the correlation between distance and time?")
+    st.subheader("📝 Example Questions")
+    for q in [
+        "Which delivery person has the highest rating?",
+        "Which delivery person is the fastest on average?",
+        "What is the average delivery time per city?"
+    ]:
+        if st.button(q, key=f"btn_{q}"):
+            st.session_state["question"] = q
+            st.session_state["last_answer"] = chat_with_delivery_data(q, df)
+            st.experimental_rerun()
 
+# Main panel
 with col_right:
-    # ✅ Show AI response FIRST
+    response_container = st.container()
+
     last_answer = st.session_state.get("last_answer", None)
     if has_answer(last_answer):
-        st.subheader("🤖 AI Response")
-        if isinstance(last_answer, pd.DataFrame):
-            st.dataframe(last_answer, use_container_width=True)
+        response_container.markdown("### 🤖 AI Response")
+        if isinstance(last_answer, tuple):
+            msg, df_out = last_answer
+            response_container.markdown(msg)
+            response_container.dataframe(df_out, use_container_width=True)
+
+            # compact summary
+            if not df_out.empty:
+                first_row = df_out.iloc[0]
+                response_container.info(f"📊 Top row: **{first_row[0]}** — {first_row[1]}")
+
+            # download buttons
+            csv = df_out.to_csv(index=False).encode("utf-8")
+            response_container.download_button("⬇ Download CSV", csv, "results.csv", "text/csv")
+
+            buf = io.BytesIO()
+            df_out.to_excel(buf, index=False, engine="openpyxl")
+            response_container.download_button("⬇ Download Excel", buf.getvalue(), "results.xlsx")
+
+            # auto chart
+            if df_out.shape[1] == 2 and pd.api.types.is_numeric_dtype(df_out.iloc[:, 1]):
+                chart_data = df_out.set_index(df_out.columns[0]).iloc[:, 0]
+                response_container.bar_chart(chart_data)
+
+        elif isinstance(last_answer, pd.DataFrame):
+            response_container.dataframe(last_answer, use_container_width=True)
         else:
-            st.success(last_answer)
+            response_container.markdown(last_answer)
 
-    # Input comes AFTER response
-    st.subheader("🔍 Enter your question")
-    q_val = st.text_area("", value=st.session_state.get("question", ""), key="question_input", height=80)
-
+    # Input box
+    st.markdown("### 🔍 Enter your question")
+    q_val = st.text_area("Type here...", value=st.session_state.get("question", ""), key="question_input", height=80)
     if st.button("🚀 Ask Question"):
         if not q_val.strip():
             st.warning("⚠️ Please enter a question.")
         else:
-            answer = chat_with_delivery_data(q_val, df)
+            with st.spinner("Analyzing..."):
+                answer = chat_with_delivery_data(q_val, df)
             st.session_state["question"] = q_val
             st.session_state["last_answer"] = answer
-            st.rerun()   # ✅ fixed for latest Streamlit
+            st.experimental_rerun()
