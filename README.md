@@ -1,95 +1,95 @@
 🚚 Delivery Data Chatbot
 
-An AI-powered chatbot built with Streamlit that allows stakeholders to ask insightful questions about delivery performance, customer orders, environmental factors, delivery personnel metrics, and geospatial insights — all based on your delivery dataset.
+Live Demo: delivery-chatbot
 
-✨ Features
+🔍 Project Overview
 
-📊 Delivery Performance Analysis
+Delivery Data Chatbot is an interactive, AI-driven web app built on Streamlit that allows users (analysts, operations managers, stakeholders) to query delivery performance data using natural language.
+Using your delivery dataset (CSV), you can ask questions like:
 
-Fastest delivery person on average
+“Which delivery person is the fastest on average?”
 
-Average delivery time per city
+“What is the average delivery time per city?”
 
-Effect of multiple deliveries on time
+“Does weather or traffic affect delivery speed?”
 
-Vehicle type efficiency
+“Which areas have the highest delays?”, etc.
 
-👥 Customer & Order Insights
+The app responds in real time, showing clear results in tables, stats, and visual charts.
 
-Longest delivery types (snack, meal, drinks)
+✅ Key Features
+Feature	What It Does
+Natural Language Q&A	Ask plain English questions and get data-driven responses.
+Performance & Efficiency	See fastest personnel, vehicle efficiency, and multi-order effects.
+Environmental Analysis	Investigate traffic, weather, festival impact on delivery times.
+Geospatial Insights	Highlight areas with delays and check distance-time correlation.
+Downloadable Results	Export tables as CSV or Excel for offline analysis.
+Interactive Visuals	Auto bar charts for comparisons (e.g. by city or traffic).
+Sample Questions Sidebar	Quickly click categorized questions to explore the dataset.
+📊 Stakeholder Question Types (Supported)
 
-Impact of order time (morning/evening) on speed
+Delivery Performance
 
-Festival season delays
+Which delivery person is the fastest on average?
 
-🌍 Environment & External Factors
+What is the average delivery time per city?
 
-Traffic density vs. delivery time
+How do multiple deliveries affect delivery time?
 
-Weather impact on delivery speed
+Which vehicle type is most efficient for deliveries?
 
-Restaurant vs. delivery location time differences
+Customer & Order Insights
 
-🚴 Delivery Personnel Metrics
+What types of orders (snack, meal, drinks) take the longest?
 
-Highest ratings and fastest deliveries
+Does order time (morning / evening) affect speed?
 
-Correlation of delivery person age with speed
+Are deliveries slower during festival periods?
 
-Impact of vehicle condition
+Environmental & External Factors
 
-📍 Geospatial Insights
+How does traffic density impact delivery time?
 
-Areas with the highest delays
+Do weather conditions affect delivery speed?
 
-Correlation between distance and delivery time
+How do restaurant vs. delivery locations influence time?
 
-🛠️ Tech Stack
+Delivery Personnel Metrics
 
-Streamlit for the web interface
+Who has the highest ratings and fastest deliveries?
 
-Pandas for data handling
+Does delivery person’s age correlate with speed or rating?
 
-Transformers (Hugging Face) for AI text generation
+Does vehicle condition impact delivery time?
 
-Python as the core language
+Geospatial Insights
 
-🚀 How to Run Locally
+Which areas have the highest delays?
 
-Clone this repository:
+What is the correlation between distance and delivery time?
 
-git clone https://github.com/your-username/delivery-data-chatbot.git
-cd delivery-data-chatbot
+🛠 Tech Stack & Architecture
 
+Streamlit — for rapid web UI
 
-Install dependencies:
+Pandas / NumPy — for data processing & statistics
 
-pip install -r requirements.txt
+Python — core logic
 
+Haversine formula — to compute distances (km) between lat/long
 
-Run the app:
+Session State — retains last question / answer
 
-streamlit run app.py
+Interactive charts — st.bar_chart, DataFrame display
 
+Download buttons — export CSV/Excel results
 
-Open your browser at http://localhost:8501
+🚀 How to Use
 
-🌐 Live Demo
+Open the app via the link above or host it yourself.
 
-👉 Try the app here
+On the left sidebar, click on categorized example questions (e.g. in “📊 Delivery Performance”) or type your own.
 
-📊 Dataset
+The AI Response appears above the input box — results displayed in bold text, tables, or charts.
 
-This project uses the Zomato Delivery Dataset (CSV file) to simulate real-world delivery analytics.
-
-🤝 Contributing
-
-Contributions are welcome! Please open an issue or submit a pull request.
-
-📬 Contact
-
-Author: Muhammad Affaf
-
-LinkedIn: linkedin.com/in/muhammadaffaf
-
-Email: muhammadaffaf746@gmail.com
+Download your results (CSV / Excel) for further analysis.
