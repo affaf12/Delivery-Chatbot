@@ -46,12 +46,12 @@ def has_answer(val):
         return True
 
 # -------------------------
-# Core Q/A (returns str or DataFrame)
+# Core Q/A
 # -------------------------
 def chat_with_delivery_data(question: str, df: pd.DataFrame):
     q = (question or "").lower().strip()
 
-    # column mapping (robust to capitalization)
+    # map columns flexibly
     id_col = find_col(df, ["Delivery_person_ID", "delivery_person_id", "Delivery ID", "ID"])
     rating_col = find_col(df, ["Delivery_person_Ratings", "Delivery_person_Rating"])
     time_col = find_col(df, ["Time_taken (min)", "Time_taken_min", "Time_taken", "Time_taken_minutes"])
@@ -69,13 +69,13 @@ def chat_with_delivery_data(question: str, df: pd.DataFrame):
     age_col = find_col(df, ["Delivery_person_Age", "Delivery_person_age", "Age"])
     vehicle_cond_col = find_col(df, ["Vehicle_condition", "vehicle_condition"])
 
-    # make a numeric time column for computations (safe)
+    # numeric delivery time
     if time_col in df.columns:
         df["_time_numeric_"] = pd.to_numeric(df[time_col], errors="coerce")
     else:
         df["_time_numeric_"] = np.nan
 
-    # distance column if lat/lon present
+    # distance
     if rest_lat and rest_lon and del_lat and del_lon:
         df["_distance_km_"] = df.apply(
             lambda r: haversine_km(r[rest_lat], r[rest_lon], r[del_lat], r[del_lon]), axis=1
@@ -83,28 +83,59 @@ def chat_with_delivery_data(question: str, df: pd.DataFrame):
     else:
         df["_distance_km_"] = np.nan
 
-    # Example rules only (trimmed for brevity)
-    if "highest rating" in q:
-        if rating_col and id_col:
-            nums = pd.to_numeric(df[rating_col], errors="coerce")
-            if nums.dropna().empty:
-                return "No numeric rating data available."
-            idx_max = nums.idxmax()
-            best_row = df.loc[idx_max]
-            top3 = df.assign(_r=nums).sort_values("_r", ascending=False).head(5)[[id_col, rating_col]]
-            return f"✅ Highest rating: **{best_row[id_col]}** — {best_row[rating_col]} ⭐", top3
+    # -------------------------
+    # Answering patterns (simplified)
+    # -------------------------
+    if "fastest" in q and id_col:
+        avg_times = df.groupby(id_col)["_time_numeric_"].mean().dropna()
+        if avg_times.empty:
+            return "No valid numeric delivery-time data."
+        fastest_id = avg_times.idxmin()
+        fastest_val = avg_times.min()
+        return f"⚡ Fastest: **{fastest_id}** — {fastest_val:.2f} min"
 
-    if "fastest" in q:
-        if id_col:
-            avg_times = df.groupby(id_col)["_time_numeric_"].mean().dropna()
-            if avg_times.empty:
-                return "No valid numeric delivery-time data."
-            fastest_id = avg_times.idxmin()
-            fastest_val = avg_times.min()
-            top3 = avg_times.sort_values().head(5).reset_index()
-            return f"⚡ Fastest: **{fastest_id}** — {fastest_val:.2f} min", top3
+    if "highest rating" in q and rating_col and id_col:
+        nums = pd.to_numeric(df[rating_col], errors="coerce")
+        if nums.dropna().empty:
+            return "No numeric rating data available."
+        idx_max = nums.idxmax()
+        best_row = df.loc[idx_max]
+        return f"✅ Highest rating: **{best_row[id_col]}** — {best_row[rating_col]} ⭐"
 
-    return "❓ I couldn't answer. Try asking about ratings, fastest deliveries, or city averages."
+    if "average" in q and "city" in q and city_col:
+        return df.groupby(city_col)["_time_numeric_"].mean().reset_index()
+
+    if "multiple deliveries" in q and multi_col:
+        return df.groupby(multi_col)["_time_numeric_"].mean().reset_index()
+
+    if "vehicle type" in q and vehicle_col:
+        return df.groupby(vehicle_col)["_time_numeric_"].mean().reset_index()
+
+    if "order" in q and order_type_col:
+        return df.groupby(order_type_col)["_time_numeric_"].mean().reset_index()
+
+    if "festival" in q and festival_col:
+        return df.groupby(festival_col)["_time_numeric_"].mean().reset_index()
+
+    if "traffic" in q and traffic_col:
+        return df.groupby(traffic_col)["_time_numeric_"].mean().reset_index()
+
+    if "weather" in q and weather_col:
+        return df.groupby(weather_col)["_time_numeric_"].mean().reset_index()
+
+    if "age" in q and age_col:
+        corr = pd.to_numeric(df[age_col], errors="coerce").corr(df["_time_numeric_"])
+        return f"👤 Correlation between age and time: **{corr:.2f}**"
+
+    if "vehicle condition" in q and vehicle_cond_col:
+        return df.groupby(vehicle_cond_col)["_time_numeric_"].mean().reset_index()
+
+    if "distance" in q:
+        if not df["_distance_km_"].isna().all():
+            corr = df["_distance_km_"].corr(df["_time_numeric_"])
+            return f"📍 Correlation between distance and time: **{corr:.2f}**"
+
+    return "❓ I couldn't answer. Try one of the example questions."
 
 # -------------------------
 # UI
@@ -125,37 +156,95 @@ except Exception as e:
 
 col_left, col_right = st.columns([1, 3])
 
+# -------------------------
+# LEFT PANEL: Stakeholder Questions
+# -------------------------
 with col_left:
-    st.subheader("📝 Example Questions")
-    for q in [
-        "Which delivery person has the highest rating?",
-        "Which delivery person is the fastest on average?",
-        "What is the average delivery time per city?"
-    ]:
-        if st.button(q, key=f"btn_{q}"):
-            st.session_state["question"] = q
-            st.session_state["last_answer"] = chat_with_delivery_data(q, df)
-            st.rerun()   # ✅ fixed: replaced st.experimental_rerun()
+    st.subheader("📝 Types of Questions Stakeholders Might Ask")
 
+    # Delivery Performance
+    with st.expander("📊 Delivery Performance", expanded=True):
+        for q in [
+            "Which delivery person is the fastest on average?",
+            "What is the average delivery time per city?",
+            "How do multiple deliveries affect delivery time?",
+            "Which vehicle type is most efficient for deliveries?",
+        ]:
+            if st.button(q, key=f"btn_perf_{q}"):
+                st.session_state["question"] = q
+                st.session_state["last_answer"] = chat_with_delivery_data(q, df)
+                st.rerun()
+
+    # Customer & Order Insights
+    with st.expander("👥 Customer & Order Insights"):
+        for q in [
+            "What types of orders take the longest to deliver?",
+            "Does order time affect delivery speed?",
+            "Are deliveries slower during festivals?",
+        ]:
+            if st.button(q, key=f"btn_cust_{q}"):
+                st.session_state["question"] = q
+                st.session_state["last_answer"] = chat_with_delivery_data(q, df)
+                st.rerun()
+
+    # Environmental & External Factors
+    with st.expander("🌍 Environmental & External Factors"):
+        for q in [
+            "How does traffic density impact delivery time?",
+            "Do weather conditions affect delivery speed?",
+            "How do restaurant locations vs. delivery locations affect delivery time?",
+        ]:
+            if st.button(q, key=f"btn_env_{q}"):
+                st.session_state["question"] = q
+                st.session_state["last_answer"] = chat_with_delivery_data(q, df)
+                st.rerun()
+
+    # Delivery Personnel Metrics
+    with st.expander("🚴 Delivery Personnel Metrics"):
+        for q in [
+            "Who has the highest ratings and fastest deliveries?",
+            "Does the age of the delivery person correlate with speed or ratings?",
+            "Does vehicle condition impact delivery time?",
+        ]:
+            if st.button(q, key=f"btn_person_{q}"):
+                st.session_state["question"] = q
+                st.session_state["last_answer"] = chat_with_delivery_data(q, df)
+                st.rerun()
+
+    # Geospatial Insights
+    with st.expander("📍 Geospatial Insights"):
+        for q in [
+            "Which areas have the highest delays?",
+            "Distance vs. time correlation for deliveries",
+        ]:
+            if st.button(q, key=f"btn_geo_{q}"):
+                st.session_state["question"] = q
+                st.session_state["last_answer"] = chat_with_delivery_data(q, df)
+                st.rerun()
+
+# -------------------------
+# RIGHT PANEL: Responses
+# -------------------------
 with col_right:
     response_container = st.container()
     last_answer = st.session_state.get("last_answer", None)
 
     if has_answer(last_answer):
         response_container.markdown("### 🤖 AI Response")
-        if isinstance(last_answer, tuple):
-            msg, df_out = last_answer
-            response_container.markdown(msg)
-            response_container.dataframe(df_out, use_container_width=True)
-        elif isinstance(last_answer, pd.DataFrame):
+        if isinstance(last_answer, pd.DataFrame):
             response_container.dataframe(last_answer, use_container_width=True)
         else:
-            response_container.markdown(last_answer)
+            response_container.success(last_answer)
 
     with st.form(key="qa_form"):
         st.markdown("### 🔍 Enter your question")
-        q_val = st.text_area("Type here...", value=st.session_state.get("question", ""), key="question_input", height=80)
-        col_submit, col_clear = st.columns([1,1])
+        q_val = st.text_area(
+            "Type here...",
+            value=st.session_state.get("question", ""),
+            key="question_input",
+            height=80,
+        )
+        col_submit, col_clear = st.columns([1, 1])
         with col_submit:
             submitted = st.form_submit_button("🚀 Ask Question")
         with col_clear:
@@ -164,7 +253,7 @@ with col_right:
         if cleared:
             st.session_state["question"] = ""
             st.session_state["last_answer"] = None
-            st.rerun()   # ✅ fixed
+            st.rerun()
 
         if submitted:
             if not q_val.strip():
@@ -174,4 +263,4 @@ with col_right:
                     answer = chat_with_delivery_data(q_val, df)
                 st.session_state["question"] = q_val
                 st.session_state["last_answer"] = answer
-                st.rerun()   # ✅ fixed
+                st.rerun()
