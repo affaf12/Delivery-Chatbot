@@ -6,7 +6,7 @@ import os
 from math import radians, cos, sin, asin, sqrt
 
 # -------------------------
-# Helpers
+# Utility helpers
 # -------------------------
 def find_col(df, candidates):
     """Return first matching column name from candidates (case-insensitive)."""
@@ -20,7 +20,7 @@ def find_col(df, candidates):
     return None
 
 def haversine_km(lat1, lon1, lat2, lon2):
-    """Haversine distance in kilometers, returns np.nan on bad input."""
+    """Return haversine distance in km or np.nan for bad values."""
     try:
         lat1, lon1, lat2, lon2 = map(float, (lat1, lon1, lat2, lon2))
     except Exception:
@@ -46,12 +46,12 @@ def has_answer(val):
         return True
 
 # -------------------------
-# Core Q/A function (returns either str or pandas.DataFrame)
+# Core Q/A (returns str or DataFrame)
 # -------------------------
-def chat_with_delivery_data(question, df):
+def chat_with_delivery_data(question: str, df: pd.DataFrame):
     q = (question or "").lower().strip()
 
-    # column mapping
+    # column mapping (robust to capitalization)
     id_col = find_col(df, ["Delivery_person_ID", "delivery_person_id", "Delivery ID", "ID"])
     rating_col = find_col(df, ["Delivery_person_Ratings", "Delivery_person_Rating"])
     time_col = find_col(df, ["Time_taken (min)", "Time_taken_min", "Time_taken", "Time_taken_minutes"])
@@ -69,51 +69,55 @@ def chat_with_delivery_data(question, df):
     age_col = find_col(df, ["Delivery_person_Age", "Delivery_person_age", "Age"])
     vehicle_cond_col = find_col(df, ["Vehicle_condition", "vehicle_condition"])
 
-    # prepare numeric time column
+    # make a numeric time column for computations (safe)
     if time_col in df.columns:
         df["_time_numeric_"] = pd.to_numeric(df[time_col], errors="coerce")
     else:
         df["_time_numeric_"] = np.nan
 
-    # compute distance if lat/lon available
+    # distance column if lat/lon present
     if rest_lat and rest_lon and del_lat and del_lon:
+        # only compute once per run (safe)
         df["_distance_km_"] = df.apply(
             lambda r: haversine_km(r[rest_lat], r[rest_lon], r[del_lat], r[del_lon]), axis=1
         )
     else:
         df["_distance_km_"] = np.nan
 
-    # --- Queries (return DataFrame or string) ---
-
-    # Highest rating
+    # ---------- Rules / Intent handlers ----------
+    # Highest rating (single best + top-3 table)
     if "highest rating" in q or ("highest" in q and "rating" in q):
         if rating_col and id_col:
             nums = pd.to_numeric(df[rating_col], errors="coerce")
             if nums.dropna().empty:
                 return "No numeric rating data available."
-            idx = nums.idxmax()
-            row = df.loc[idx]
-            return f"✅ Highest rating: **{row.get(id_col,'N/A')}** — {row.get(rating_col)} ⭐"
-        return "Rating or ID column not found in dataset."
+            idx_max = nums.idxmax()
+            best_row = df.loc[idx_max]
+            # also prepare top 3
+            top3 = df.assign(_r = pd.to_numeric(df[rating_col], errors="coerce")) \
+                     .sort_values("_r", ascending=False).head(5)[[id_col, rating_col]]
+            top3 = top3.dropna()
+            return f"✅ Highest rating: **{best_row.get(id_col, 'N/A')}** — {best_row.get(rating_col)} ⭐\n\nTop performers (by rating):", top3
 
-    # Fastest on average (per delivery person)
+    # Fastest on average (per delivery person) — returns string + small DF
     if "fastest" in q and ("average" in q or "on average" in q or "on avg" in q):
         if id_col:
             avg_times = df.groupby(id_col)["_time_numeric_"].mean().dropna()
             if avg_times.empty:
-                return "No valid numeric time data to compute averages."
+                return "No valid numeric delivery-time data."
             fastest_id = avg_times.idxmin()
             fastest_val = avg_times.min()
-            return f"⚡ Fastest: **{fastest_id}** — {fastest_val:.2f} minutes (avg)"
-        return "Delivery person ID column not found."
+            top3 = avg_times.sort_values().head(5).reset_index().rename(columns={"_time_numeric_":"avg_time_min"})
+            top3["avg_time_min"] = top3["avg_time_min"].round(2)
+            return f"⚡ Fastest delivery person (avg): **{fastest_id}** — {fastest_val:.2f} min (avg)\n\nTop (by avg time):", top3
 
-    # Average delivery time per city
+    # Average delivery time per city (returns DataFrame sorted ascending)
     if "average" in q and "city" in q:
         if city_col:
             out = df.groupby(city_col)["_time_numeric_"].mean().reset_index().rename(columns={"_time_numeric_":"avg_time_min"})
             out["avg_time_min"] = out["avg_time_min"].round(2)
             return out.sort_values("avg_time_min")
-        return "City column or time column missing."
+        return "City or time column not found."
 
     # Multiple deliveries effect
     if "multiple deliveries" in q or ("multiple" in q and "deliver" in q):
@@ -121,23 +125,23 @@ def chat_with_delivery_data(question, df):
             out = df.groupby(multi_col)["_time_numeric_"].mean().reset_index().rename(columns={"_time_numeric_":"avg_time_min"})
             out["avg_time_min"] = out["avg_time_min"].round(2)
             return out
-        return "Multiple deliveries column not found."
+        return "multiple_deliveries column not found."
 
-    # Vehicle type efficiency
+    # Vehicle efficiency (returns DataFrame sorted ascending)
     if "vehicle" in q and ("efficient" in q or "efficiency" in q or "most efficient" in q):
         if vehicle_col:
             out = df.groupby(vehicle_col)["_time_numeric_"].mean().reset_index().rename(columns={"_time_numeric_":"avg_time_min"})
             out["avg_time_min"] = out["avg_time_min"].round(2)
             return out.sort_values("avg_time_min")
-        return "Vehicle type column not found."
+        return "vehicle type column not found."
 
-    # Order type durations
-    if ("order type" in q or "types of orders" in q or "order took the longest" in q or ("longest" in q and "order" in q)):
+    # Order type durations (which type takes longest)
+    if ("order type" in q or "types of orders" in q or ("longest" in q and "order" in q) or "which order" in q):
         if order_type_col:
             out = df.groupby(order_type_col)["_time_numeric_"].mean().reset_index().rename(columns={"_time_numeric_":"avg_time_min"})
             out["avg_time_min"] = out["avg_time_min"].round(2)
             return out.sort_values("avg_time_min", ascending=False)
-        return "Order type column not found."
+        return "Type_of_order column not found."
 
     # Festival effect
     if "festival" in q:
@@ -153,7 +157,7 @@ def chat_with_delivery_data(question, df):
             out = df.groupby(traffic_col)["_time_numeric_"].mean().reset_index().rename(columns={"_time_numeric_":"avg_time_min"})
             out["avg_time_min"] = out["avg_time_min"].round(2)
             return out.sort_values("avg_time_min")
-        return "Traffic column not found."
+        return "Road_traffic_density column not found."
 
     # Weather impact
     if "weather" in q:
@@ -161,34 +165,34 @@ def chat_with_delivery_data(question, df):
             out = df.groupby(weather_col)["_time_numeric_"].mean().reset_index().rename(columns={"_time_numeric_":"avg_time_min"})
             out["avg_time_min"] = out["avg_time_min"].round(2)
             return out.sort_values("avg_time_min")
-        return "Weather column not found."
+        return "Weather_conditions column not found."
 
     # Age correlation
     if "age" in q:
         if age_col and not df["_time_numeric_"].isna().all():
             age_num = pd.to_numeric(df[age_col], errors="coerce")
             if age_num.dropna().empty:
-                return "No numeric age data available."
+                return "No numeric age data."
             corr = age_num.corr(df["_time_numeric_"])
-            return f"👤 Correlation (age vs time): **{(round(corr,2) if not np.isnan(corr) else 'NaN')}**"
+            return f"👤 Correlation (age vs delivery time): **{(round(corr,2) if not np.isnan(corr) else 'NaN')}**"
         return "Age or time column not found."
 
-    # Vehicle condition
+    # Vehicle condition impact
     if "vehicle condition" in q or "vehicle_condition" in q:
         if vehicle_cond_col:
             out = df.groupby(vehicle_cond_col)["_time_numeric_"].mean().reset_index().rename(columns={"_time_numeric_":"avg_time_min"})
             out["avg_time_min"] = out["avg_time_min"].round(2)
             return out.sort_values("avg_time_min")
-        return "Vehicle condition column not found."
+        return "Vehicle_condition column not found."
 
     # Distance vs time correlation
     if ("distance" in q and "time" in q) or ("distance" in q and "correlation" in q):
         if not df["_distance_km_"].isna().all() and not df["_time_numeric_"].isna().all():
             corr = df["_distance_km_"].corr(df["_time_numeric_"])
             return f"📍 Correlation (distance km vs time min): **{(round(corr,2) if not np.isnan(corr) else 'NaN')}**"
-        return "Latitude/longitude or time data missing to compute distance/time correlation."
+        return "Latitude/longitude or time data missing to compute correlation."
 
-    # Areas with highest delays
+    # Areas with highest delays (top 10)
     if ("areas" in q and ("delay" in q or "delays" in q)) or ("highest delays" in q):
         if city_col:
             out = df.groupby(city_col)["_time_numeric_"].mean().reset_index().rename(columns={"_time_numeric_":"avg_time_min"})
@@ -196,99 +200,140 @@ def chat_with_delivery_data(question, df):
             return out.sort_values("avg_time_min", ascending=False).head(10)
         return "City or time column not found."
 
-    # fallback
-    return ("❓ I couldn't identify a direct match for that question.\n"
-            "Try: 'Which delivery person has the highest rating?',\n"
-            "'Which delivery person is the fastest on average?',\n"
-            "'What is the average delivery time per city?', or\n"
-            "'How does traffic density impact delivery time?'")
+    # Final fallback (helpful examples)
+    return ("❓ I couldn't identify a direct match for that question.\n\n"
+            "Try one of these example queries:\n"
+            "- Which delivery person has the highest rating?\n"
+            "- Which delivery person is the fastest on average?\n"
+            "- What is the average delivery time per city?\n"
+            "- How does traffic density impact delivery time?\n"
+            )
 
 # -------------------------
-# App start / UI
+# UI: Streamlit app
 # -------------------------
 st.set_page_config(page_title="🚚 Delivery Data Chatbot", layout="wide")
 st.title("🚚 Delivery Data Chatbot")
-st.markdown("Ask questions about your delivery dataset and get clean, data-driven answers.")
+st.write("Ask plain-English questions about your delivery dataset. Results appear above the question box.")
 
-# load dataset from repo
+# load dataset (must be present in repo)
 DATA_FILE = "Zomato Dataset.csv"
 if not os.path.exists(DATA_FILE):
-    st.error("❌ Dataset not found! Please make sure 'Zomato Dataset.csv' is in the repo root.")
+    st.error("❌ Dataset not found. Put 'Zomato Dataset.csv' in the app folder (repo root).")
     st.stop()
 
 try:
     df = pd.read_csv(DATA_FILE)
 except Exception as e:
-    st.error(f"❌ Could not read dataset: {e}")
+    st.error(f"❌ Failed to read dataset: {e}")
     st.stop()
 
-# layout: sidebar (options) + main panel
+# build layout: sidebar + main
 col_left, col_right = st.columns([1, 3])
 
+# ------- Sidebar: categories + clickable example questions -------
 with col_left:
     st.subheader("📝 Options")
-    with st.expander("📊 Delivery Performance"):
-        st.markdown("""
-        - Which delivery person is the fastest on average?  
-        - What is the average delivery time per city?  
-        - How do multiple deliveries affect delivery time?  
-        - Which vehicle type is most efficient for deliveries?  
-        """)
-    with st.expander("👥 Customer & Order Insights"):
-        st.markdown("""
-        - What types of orders take the longest to deliver?  
-        - Does order time affect delivery speed?  
-        - Are deliveries slower during festivals?  
-        """)
-    with st.expander("🌍 Environment & External Factors"):
-        st.markdown("""
-        - How does traffic density impact delivery time?  
-        - Do weather conditions affect delivery speed?  
-        - How do restaurant vs. delivery locations affect time?  
-        """)
-    with st.expander("🚴 Delivery Personnel Metrics"):
-        st.markdown("""
-        - Who has the highest ratings and fastest deliveries?  
-        - Does the age of the delivery person affect speed?  
-        - Does vehicle condition impact delivery time?  
-        """)
-    with st.expander("📍 Geospatial Insights"):
-        st.markdown("""
-        - Which areas have the highest delays?  
-        - What is the correlation between distance and time?  
-        """)
-    st.markdown("---\n💡 Tip: Ask plain English questions like the bullets above.")
+    st.markdown("Click any example to auto-fill and run it.")
 
-# RIGHT: response placeholder (top) + question form (below)
+    # grouped examples per category (clickable)
+    examples = {
+        "Delivery Performance": [
+            "Which delivery person is the fastest on average?",
+            "Which delivery person has the highest rating?"
+        ],
+        "Customer & Order Insights": [
+            "What types of orders take the longest to deliver?",
+            "Does order time (morning/evening) affect delivery speed?"
+        ],
+        "Environment & External": [
+            "How does traffic density impact delivery time?",
+            "Do weather conditions affect delivery speed?"
+        ],
+        "Personnel Metrics": [
+            "Does the age of the delivery person affect delivery time?",
+            "Does vehicle condition impact delivery time?"
+        ],
+        "Geospatial Insights": [
+            "Which areas have the highest delays?",
+            "What is the correlation between distance and time?"
+        ]
+    }
+
+    # show expanders and buttons
+    for heading, qs in examples.items():
+        with st.expander(heading):
+            for q in qs:
+                # each button sets question and computes answer immediately via callback
+                if st.button(q, key=f"btn_{q}"):
+                    st.session_state["question"] = q
+                    # compute and store answer
+                    st.session_state["last_answer"] = chat_with_delivery_data(q, df)
+                    # prevent immediate rerun loop — use a flag to display (it will show due to same-run)
+                    st.experimental_rerun()
+
+    st.markdown("---")
+    st.caption("Tip: you can also type your own question in the main panel below.")
+
+# ------- Main panel: Response on top, question form below -------
 with col_right:
-    response_placeholder = st.empty()  # will render the answer above the form
+    # placeholder area for answer
+    response_container = st.container()
 
-    # show last answer (if any) safely
-    last = st.session_state.get("last_answer", None)
-    if has_answer(last):
-        response_placeholder.subheader("🤖 AI Response (latest)")
-        if isinstance(last, pd.DataFrame):
-            response_placeholder.dataframe(last, use_container_width=True)
+    # display last answer (if any) safely
+    last_answer = st.session_state.get("last_answer", None)
+    if has_answer(last_answer):
+        response_container.markdown("### 🤖 AI Response (latest)")
+        # our chat function sometimes returns a tuple (text, DataFrame) for certain queries
+        if isinstance(last_answer, tuple) and len(last_answer) == 2 and isinstance(last_answer[1], pd.DataFrame):
+            # tuple: (message, dataframe)
+            response_container.markdown(last_answer[0])
+            df_out = last_answer[1]
+            response_container.dataframe(df_out, use_container_width=True)
+            # chart if possible
+            if df_out.shape[1] == 2 and pd.api.types.is_numeric_dtype(df_out.iloc[:,1]):
+                try:
+                    chart_data = df_out.set_index(df_out.columns[0]).iloc[:,0]
+                    response_container.bar_chart(chart_data)
+                except Exception:
+                    pass
+        elif isinstance(last_answer, pd.DataFrame):
+            response_container.dataframe(last_answer, use_container_width=True)
+            # auto-chart if the DF has one numeric column besides the index
+            if last_answer.shape[1] == 2 and pd.api.types.is_numeric_dtype(last_answer.iloc[:,1]):
+                try:
+                    chart_data = last_answer.set_index(last_answer.columns[0]).iloc[:,0]
+                    response_container.bar_chart(chart_data)
+                except Exception:
+                    pass
         else:
-            response_placeholder.markdown(last)
+            # plain text answer
+            response_container.markdown(last_answer)
 
-    # form for question input
+    # input form below
     with st.form(key="qa_form", clear_on_submit=False):
-        st.subheader("🔍 Enter your question")
-        q_val = st.text_area("", value=st.session_state.get("question", ""), key="question_input", height=80)
-        submitted = st.form_submit_button("🚀 Ask Question")
+        st.markdown("### 🔍 Enter your question")
+        q_val = st.text_area("Type question here...", value=st.session_state.get("question", ""), key="question_input", height=80)
+        col_submit, col_clear = st.columns([1,1])
+        with col_submit:
+            submitted = st.form_submit_button("🚀 Ask Question")
+        with col_clear:
+            cleared = st.form_submit_button("✖ Clear")
+
+        if cleared:
+            # clear only question & last_answer
+            st.session_state["question"] = ""
+            st.session_state["last_answer"] = None
+            # refresh to update UI
+            st.experimental_rerun()
 
         if submitted:
-            if not q_val.strip():
-                st.warning("⚠️ Please enter a question.")
+            if not q_val or not q_val.strip():
+                st.warning("⚠️ Please enter a question (or click an example on the left).")
             else:
-                answer = chat_with_delivery_data(q_val, df)
+                with st.spinner("Thinking..."):
+                    answer = chat_with_delivery_data(q_val, df)
                 st.session_state["question"] = q_val
                 st.session_state["last_answer"] = answer
-
-                # update immediately in the placeholder (same run)
-                response_placeholder.subheader("🤖 AI Response")
-                if isinstance(answer, pd.DataFrame):
-                    response_placeholder.dataframe(answer, use_container_width=True)
-                else:
-                    response_placeholder.markdown(answer)
+                # update display immediately (same-run)
+                st.experimental_rerun()
