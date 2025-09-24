@@ -54,13 +54,11 @@ def chat_with_delivery_data(question, df):
     age_col = find_col(df, ["Delivery_person_Age", "Age"])
     vehicle_cond_col = find_col(df, ["Vehicle_condition", "vehicle_condition"])
 
-    # prepare time column
     if time_col:
         df["_time_numeric_"] = pd.to_numeric(df[time_col], errors="coerce")
     else:
         df["_time_numeric_"] = pd.NA
 
-    # distance
     if rest_lat and rest_lon and del_lat and del_lon:
         df["_distance_km_"] = df.apply(
             lambda r: haversine_km(r[rest_lat], r[rest_lon], r[del_lat], r[del_lon]), axis=1
@@ -68,7 +66,7 @@ def chat_with_delivery_data(question, df):
     else:
         df["_distance_km_"] = np.nan
 
-    # -------- Rules --------
+    # Rules
     if "highest rating" in q:
         if rating_col and id_col:
             best = df.loc[pd.to_numeric(df[rating_col], errors="coerce").idxmax()]
@@ -135,78 +133,48 @@ def chat_with_delivery_data(question, df):
             avg = df.groupby(city_col)["_time_numeric_"].mean().sort_values(ascending=False)
             return f"⏳ Areas with highest delays:\n{avg.to_string()}"
 
-    # -------- Fallback --------
-    return "❓ I couldn't find an exact answer. Try rephrasing (e.g. 'average delivery per city', 'impact of traffic', 'order type durations')."
+    return "❓ I couldn't find an exact answer. Try rephrasing."
 
 # --------------------------------------
-# App start
+# App
 # --------------------------------------
 st.set_page_config(page_title="🚚 Delivery Data Chatbot", layout="wide")
 st.title("🚚 Delivery Data Chatbot")
-st.markdown("Ask questions about your delivery dataset and get clean, data-driven answers.")
 
-# Load dataset directly
+# Load dataset
 DATA_FILE = "Zomato Dataset.csv"
 if not os.path.exists(DATA_FILE):
     st.error("❌ Dataset not found! Please make sure 'Zomato Dataset.csv' is in the repo.")
     st.stop()
+df = pd.read_csv(DATA_FILE)
 
-try:
-    df = pd.read_csv(DATA_FILE)
-except Exception as e:
-    st.error(f"❌ Could not read dataset: {e}")
-    st.stop()
-
-# Sidebar
+# Layout
 col_left, col_right = st.columns([1, 3])
+
 with col_left:
     st.subheader("📝 Options")
     with st.expander("📊 Delivery Performance"):
-        st.markdown("""
-        - Which delivery person is the fastest on average?  
-        - What is the average delivery time per city?  
-        - How do multiple deliveries affect delivery time?  
-        - Which vehicle type is most efficient for deliveries?  
-        """)
+        st.markdown("- Which delivery person is the fastest on average?  \n- What is the average delivery time per city?  \n- How do multiple deliveries affect delivery time?  \n- Which vehicle type is most efficient for deliveries?  ")
     with st.expander("👥 Customer & Order Insights"):
-        st.markdown("""
-        - What types of orders take the longest to deliver?  
-        - Does order time affect delivery speed?  
-        - Are deliveries slower during festivals?  
-        """)
+        st.markdown("- What types of orders take the longest to deliver?  \n- Does order time affect delivery speed?  \n- Are deliveries slower during festivals?  ")
     with st.expander("🌍 Environment & External Factors"):
-        st.markdown("""
-        - How does traffic density impact delivery time?  
-        - Do weather conditions affect delivery speed?  
-        - How do restaurant vs. delivery locations affect time?  
-        """)
+        st.markdown("- How does traffic density impact delivery time?  \n- Do weather conditions affect delivery speed?  \n- How do restaurant vs. delivery locations affect time?  ")
     with st.expander("🚴 Delivery Personnel Metrics"):
-        st.markdown("""
-        - Who has the highest ratings and fastest deliveries?  
-        - Does the age of the delivery person affect speed?  
-        - Does vehicle condition impact delivery time?  
-        """)
+        st.markdown("- Who has the highest ratings and fastest deliveries?  \n- Does the age of the delivery person affect speed?  \n- Does vehicle condition impact delivery time?  ")
     with st.expander("📍 Geospatial Insights"):
-        st.markdown("""
-        - Which areas have the highest delays?  
-        - What is the correlation between distance and time?  
-        """)
-    st.markdown("---\n💡 Tip: Try typing your own custom questions!")
+        st.markdown("- Which areas have the highest delays?  \n- What is the correlation between distance and time?  ")
 
-# Right panel
 with col_right:
-    st.subheader("🤖 AI Response")
-    if "last_answer" not in st.session_state:
-        st.session_state["last_answer"] = ""
-    answer_box = st.text_area(" ", value=st.session_state["last_answer"], height=160)
-
     st.subheader("🔍 Enter your question")
-    q_val = st.text_area("", value=st.session_state.get("question", ""), key="question_input", height=80)
+    q_val = st.text_area("", placeholder="Type your question here...", key="question_input", height=80)
 
     if st.button("🚀 Ask Question"):
         if not q_val.strip():
             st.warning("⚠️ Please enter a question.")
         else:
-            answer = chat_with_delivery_data(q_val, df)
-            st.session_state["last_answer"] = answer
-            st.session_state["question"] = q_val
+            st.session_state["last_answer"] = chat_with_delivery_data(q_val, df)
+
+    # Display answer immediately
+    if "last_answer" in st.session_state and st.session_state["last_answer"]:
+        st.subheader("🤖 AI Response")
+        st.markdown(st.session_state["last_answer"])
