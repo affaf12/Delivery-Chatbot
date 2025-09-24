@@ -1,15 +1,28 @@
 import streamlit as st
 import pandas as pd
 from transformers import pipeline
+import os
 
 # -------------------------
-# Load dataset
+# Load dataset safely
 # -------------------------
-df = pd.read_csv("company_esg_financial_dataset.csv")  # replace with your dataset
+DATA_FILE = "Zomato Dataset.csv"  # your dataset file
+
+if os.path.exists(DATA_FILE):
+    df = pd.read_csv(DATA_FILE)
+else:
+    # fallback if dataset not found locally (replace with your file's GitHub raw link if needed)
+    DATA_URL = "https://raw.githubusercontent.com/your-username/your-repo/main/Zomato%20Dataset.csv"
+    try:
+        df = pd.read_csv(DATA_URL)
+    except Exception as e:
+        st.error("❌ Dataset not found! Please upload or provide a valid dataset.")
+        st.stop()
+
 data_text = df.to_string(index=False)
 
 # -------------------------
-# Load model (tiny demo model for now)
+# Load model (small demo)
 # -------------------------
 generator = pipeline("text-generation", model="sshleifer/tiny-gpt2")
 
