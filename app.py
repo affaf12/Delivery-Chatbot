@@ -36,7 +36,6 @@ def haversine_km(lat1, lon1, lat2, lon2):
 def chat_with_delivery_data(question, df):
     q = question.lower().strip()
 
-    # map common column names
     id_col = find_col(df, ["Delivery_person_ID", "delivery_person_id", "Delivery ID", "ID"])
     rating_col = find_col(df, ["Delivery_person_Ratings", "Delivery_person_Rating"])
     time_col = find_col(df, ["Time_taken (min)", "Time_taken_min", "Time_taken", "Time_taken_minutes"])
@@ -54,13 +53,11 @@ def chat_with_delivery_data(question, df):
     age_col = find_col(df, ["Delivery_person_Age", "Age"])
     vehicle_cond_col = find_col(df, ["Vehicle_condition", "vehicle_condition"])
 
-    # prepare time column
     if time_col:
         df["_time_numeric_"] = pd.to_numeric(df[time_col], errors="coerce")
     else:
         df["_time_numeric_"] = pd.NA
 
-    # distance
     if rest_lat and rest_lon and del_lat and del_lon:
         df["_distance_km_"] = df.apply(
             lambda r: haversine_km(r[rest_lat], r[rest_lon], r[del_lat], r[del_lon]), axis=1
@@ -68,7 +65,6 @@ def chat_with_delivery_data(question, df):
     else:
         df["_distance_km_"] = np.nan
 
-    # -------- Rules --------
     if "highest rating" in q:
         if rating_col and id_col:
             best = df.loc[pd.to_numeric(df[rating_col], errors="coerce").idxmax()]
@@ -82,38 +78,31 @@ def chat_with_delivery_data(question, df):
 
     if "average" in q and "city" in q:
         if city_col:
-            avg = df.groupby(city_col)["_time_numeric_"].mean().reset_index()
-            return avg
+            return df.groupby(city_col)["_time_numeric_"].mean().reset_index()
 
     if "multiple" in q:
         if multi_col:
-            avg = df.groupby(multi_col)["_time_numeric_"].mean().reset_index()
-            return avg
+            return df.groupby(multi_col)["_time_numeric_"].mean().reset_index()
 
     if "vehicle" in q:
         if vehicle_col:
-            avg = df.groupby(vehicle_col)["_time_numeric_"].mean().reset_index()
-            return avg
+            return df.groupby(vehicle_col)["_time_numeric_"].mean().reset_index()
 
     if "order type" in q or "types of orders" in q:
         if order_type_col:
-            avg = df.groupby(order_type_col)["_time_numeric_"].mean().reset_index()
-            return avg
+            return df.groupby(order_type_col)["_time_numeric_"].mean().reset_index()
 
     if "festival" in q:
         if festival_col:
-            avg = df.groupby(festival_col)["_time_numeric_"].mean().reset_index()
-            return avg
+            return df.groupby(festival_col)["_time_numeric_"].mean().reset_index()
 
     if "traffic" in q:
         if traffic_col:
-            avg = df.groupby(traffic_col)["_time_numeric_"].mean().reset_index()
-            return avg
+            return df.groupby(traffic_col)["_time_numeric_"].mean().reset_index()
 
     if "weather" in q:
         if weather_col:
-            avg = df.groupby(weather_col)["_time_numeric_"].mean().reset_index()
-            return avg
+            return df.groupby(weather_col)["_time_numeric_"].mean().reset_index()
 
     if "age" in q:
         if age_col:
@@ -122,8 +111,7 @@ def chat_with_delivery_data(question, df):
 
     if "vehicle condition" in q:
         if vehicle_cond_col:
-            avg = df.groupby(vehicle_cond_col)["_time_numeric_"].mean().reset_index()
-            return avg
+            return df.groupby(vehicle_cond_col)["_time_numeric_"].mean().reset_index()
 
     if "distance" in q:
         if not df["_distance_km_"].isna().all():
@@ -132,10 +120,8 @@ def chat_with_delivery_data(question, df):
 
     if "area" in q or ("city" in q and "delay" in q):
         if city_col:
-            avg = df.groupby(city_col)["_time_numeric_"].mean().reset_index().sort_values("_time_numeric_", ascending=False)
-            return avg
+            return df.groupby(city_col)["_time_numeric_"].mean().reset_index().sort_values("_time_numeric_", ascending=False)
 
-    # -------- Fallback --------
     return "❓ I couldn't find an exact answer. Try: *'average delivery per city'*, *'impact of traffic'*, *'order type durations'*."
 
 # --------------------------------------
@@ -145,7 +131,6 @@ st.set_page_config(page_title="🚚 Delivery Data Chatbot", layout="wide")
 st.title("🚚 Delivery Data Chatbot")
 st.markdown("Ask questions about your delivery dataset and get clean, data-driven answers.")
 
-# Load dataset directly
 DATA_FILE = "Zomato Dataset.csv"
 if not os.path.exists(DATA_FILE):
     st.error("❌ Dataset not found! Please make sure 'Zomato Dataset.csv' is in the repo.")
@@ -157,8 +142,8 @@ except Exception as e:
     st.error(f"❌ Could not read dataset: {e}")
     st.stop()
 
-# Sidebar
 col_left, col_right = st.columns([1, 3])
+
 with col_left:
     st.subheader("📝 Options")
     with st.expander("📊 Delivery Performance"):
@@ -193,8 +178,17 @@ with col_left:
         """)
     st.markdown("---\n💡 Tip: Try typing your own custom questions!")
 
-# Right panel
 with col_right:
+    # ✅ Show AI response FIRST
+    if "last_answer" in st.session_state and st.session_state["last_answer"]:
+        st.subheader("🤖 AI Response")
+        ans = st.session_state["last_answer"]
+        if isinstance(ans, pd.DataFrame):
+            st.dataframe(ans, use_container_width=True)
+        else:
+            st.success(ans)
+
+    # Input comes AFTER response
     st.subheader("🔍 Enter your question")
     q_val = st.text_area("", value=st.session_state.get("question", ""), key="question_input", height=80)
 
@@ -205,12 +199,4 @@ with col_right:
             answer = chat_with_delivery_data(q_val, df)
             st.session_state["question"] = q_val
             st.session_state["last_answer"] = answer
-
-    # Show AI response **above**
-    if "last_answer" in st.session_state and st.session_state["last_answer"]:
-        st.subheader("🤖 AI Response")
-        ans = st.session_state["last_answer"]
-        if isinstance(ans, pd.DataFrame):
-            st.dataframe(ans, use_container_width=True)
-        else:
-            st.success(ans)
+            st.rerun()  # refresh to instantly show response above
