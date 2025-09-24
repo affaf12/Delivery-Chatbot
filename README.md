@@ -1,6 +1,6 @@
 🚚 Delivery Data Chatbot
 
-Live Demo: delivery-chatbot
+Live Demo: https://delivery-chatbot-scwqochc7mtnkykkayatxn.streamlit.app/
 
 🔍 Project Overview
 
