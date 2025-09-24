@@ -109,16 +109,48 @@ except Exception as e:
     st.error(f"❌ Could not read dataset: {e}")
     st.stop()
 
-# Sidebar (just options, no upload/url)
+# Sidebar (all option groups)
 col_left, col_right = st.columns([1, 3])
 
 with col_left:
     st.subheader("📝 Options")
 
     with st.expander("📊 Delivery Performance"):
-        st.markdown("- Which delivery person is the fastest on average?\n- What is the average delivery time per city?")
+        st.markdown("""
+        - Which delivery person is the fastest on average?  
+        - What is the average delivery time per city?  
+        - How do multiple deliveries affect delivery time?  
+        - Which vehicle type is most efficient for deliveries?  
+        """)
+
     with st.expander("👥 Customer & Order Insights"):
-        st.markdown("- What types of orders take the longest?\n- Are deliveries slower during festivals?")
+        st.markdown("""
+        - What types of orders take the longest to deliver?  
+        - Does order time affect delivery speed?  
+        - Are deliveries slower during festivals?  
+        """)
+
+    with st.expander("🌍 Environment & External Factors"):
+        st.markdown("""
+        - How does traffic density impact delivery time?  
+        - Do weather conditions affect delivery speed?  
+        - How do restaurant vs. delivery locations affect time?  
+        """)
+
+    with st.expander("🚴 Delivery Personnel Metrics"):
+        st.markdown("""
+        - Who has the highest ratings and fastest deliveries?  
+        - Does the age of the delivery person affect speed?  
+        - Does vehicle condition impact delivery time?  
+        """)
+
+    with st.expander("📍 Geospatial Insights"):
+        st.markdown("""
+        - Which areas have the highest delays?  
+        - What is the correlation between distance and time?  
+        """)
+
+    st.markdown("---\n💡 Tip: Try typing your own custom questions!")
 
 # Right panel: Only Answer + Question
 with col_right:
