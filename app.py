@@ -54,11 +54,13 @@ def chat_with_delivery_data(question, df):
     age_col = find_col(df, ["Delivery_person_Age", "Age"])
     vehicle_cond_col = find_col(df, ["Vehicle_condition", "vehicle_condition"])
 
+    # prepare time column
     if time_col:
         df["_time_numeric_"] = pd.to_numeric(df[time_col], errors="coerce")
     else:
         df["_time_numeric_"] = pd.NA
 
+    # distance
     if rest_lat and rest_lon and del_lat and del_lon:
         df["_distance_km_"] = df.apply(
             lambda r: haversine_km(r[rest_lat], r[rest_lon], r[del_lat], r[del_lon]), axis=1
@@ -66,115 +68,149 @@ def chat_with_delivery_data(question, df):
     else:
         df["_distance_km_"] = np.nan
 
-    # Rules
+    # -------- Rules --------
     if "highest rating" in q:
         if rating_col and id_col:
             best = df.loc[pd.to_numeric(df[rating_col], errors="coerce").idxmax()]
-            return f"✅ Highest rating: {best.get(id_col)} — {best.get(rating_col)}"
+            return f"✅ Highest rating: **{best.get(id_col)}** — {best.get(rating_col)} ⭐"
 
     if "fastest" in q:
         if id_col:
             avg_times = df.groupby(id_col)["_time_numeric_"].mean().dropna()
             fastest = avg_times.idxmin()
-            return f"⚡ Fastest: {fastest} — {avg_times.min():.2f} min"
+            return f"⚡ Fastest: **{fastest}** — {avg_times.min():.2f} min"
 
     if "average" in q and "city" in q:
         if city_col:
-            avg = df.groupby(city_col)["_time_numeric_"].mean()
-            return avg.to_string()
+            avg = df.groupby(city_col)["_time_numeric_"].mean().reset_index()
+            return avg
 
     if "multiple" in q:
         if multi_col:
-            avg = df.groupby(multi_col)["_time_numeric_"].mean()
-            return f"📦 Multiple deliveries impact:\n{avg.to_string()}"
+            avg = df.groupby(multi_col)["_time_numeric_"].mean().reset_index()
+            return avg
 
     if "vehicle" in q:
         if vehicle_col:
-            avg = df.groupby(vehicle_col)["_time_numeric_"].mean()
-            return f"🚲 Vehicle efficiency:\n{avg.to_string()}"
+            avg = df.groupby(vehicle_col)["_time_numeric_"].mean().reset_index()
+            return avg
 
     if "order type" in q or "types of orders" in q:
         if order_type_col:
-            avg = df.groupby(order_type_col)["_time_numeric_"].mean()
-            return f"🍔 Order type durations:\n{avg.to_string()}"
+            avg = df.groupby(order_type_col)["_time_numeric_"].mean().reset_index()
+            return avg
 
     if "festival" in q:
         if festival_col:
-            avg = df.groupby(festival_col)["_time_numeric_"].mean()
-            return f"🎉 Festival vs Non-Festival:\n{avg.to_string()}"
+            avg = df.groupby(festival_col)["_time_numeric_"].mean().reset_index()
+            return avg
 
     if "traffic" in q:
         if traffic_col:
-            avg = df.groupby(traffic_col)["_time_numeric_"].mean()
-            return f"🚦 Traffic impact:\n{avg.to_string()}"
+            avg = df.groupby(traffic_col)["_time_numeric_"].mean().reset_index()
+            return avg
 
     if "weather" in q:
         if weather_col:
-            avg = df.groupby(weather_col)["_time_numeric_"].mean()
-            return f"☁️ Weather impact:\n{avg.to_string()}"
+            avg = df.groupby(weather_col)["_time_numeric_"].mean().reset_index()
+            return avg
 
     if "age" in q:
         if age_col:
             corr = pd.to_numeric(df[age_col], errors="coerce").corr(df["_time_numeric_"])
-            return f"👤 Age vs Time correlation: {corr:.2f}"
+            return f"👤 Correlation between age and time: **{corr:.2f}**"
 
     if "vehicle condition" in q:
         if vehicle_cond_col:
-            avg = df.groupby(vehicle_cond_col)["_time_numeric_"].mean()
-            return f"🛵 Vehicle condition impact:\n{avg.to_string()}"
+            avg = df.groupby(vehicle_cond_col)["_time_numeric_"].mean().reset_index()
+            return avg
 
     if "distance" in q:
         if not df["_distance_km_"].isna().all():
             corr = df["_distance_km_"].corr(df["_time_numeric_"])
-            return f"📍 Distance vs Time correlation: {corr:.2f}"
+            return f"📍 Correlation between distance and time: **{corr:.2f}**"
 
     if "area" in q or ("city" in q and "delay" in q):
         if city_col:
-            avg = df.groupby(city_col)["_time_numeric_"].mean().sort_values(ascending=False)
-            return f"⏳ Areas with highest delays:\n{avg.to_string()}"
+            avg = df.groupby(city_col)["_time_numeric_"].mean().reset_index().sort_values("_time_numeric_", ascending=False)
+            return avg
 
-    return "❓ I couldn't find an exact answer. Try rephrasing."
+    # -------- Fallback --------
+    return "❓ I couldn't find an exact answer. Try: *'average delivery per city'*, *'impact of traffic'*, *'order type durations'*."
 
 # --------------------------------------
-# App
+# App start
 # --------------------------------------
 st.set_page_config(page_title="🚚 Delivery Data Chatbot", layout="wide")
 st.title("🚚 Delivery Data Chatbot")
+st.markdown("Ask questions about your delivery dataset and get clean, data-driven answers.")
 
-# Load dataset
+# Load dataset directly
 DATA_FILE = "Zomato Dataset.csv"
 if not os.path.exists(DATA_FILE):
     st.error("❌ Dataset not found! Please make sure 'Zomato Dataset.csv' is in the repo.")
     st.stop()
-df = pd.read_csv(DATA_FILE)
 
-# Layout
+try:
+    df = pd.read_csv(DATA_FILE)
+except Exception as e:
+    st.error(f"❌ Could not read dataset: {e}")
+    st.stop()
+
+# Sidebar
 col_left, col_right = st.columns([1, 3])
-
 with col_left:
     st.subheader("📝 Options")
     with st.expander("📊 Delivery Performance"):
-        st.markdown("- Which delivery person is the fastest on average?  \n- What is the average delivery time per city?  \n- How do multiple deliveries affect delivery time?  \n- Which vehicle type is most efficient for deliveries?  ")
+        st.markdown("""
+        - Which delivery person is the fastest on average?  
+        - What is the average delivery time per city?  
+        - How do multiple deliveries affect delivery time?  
+        - Which vehicle type is most efficient for deliveries?  
+        """)
     with st.expander("👥 Customer & Order Insights"):
-        st.markdown("- What types of orders take the longest to deliver?  \n- Does order time affect delivery speed?  \n- Are deliveries slower during festivals?  ")
+        st.markdown("""
+        - What types of orders take the longest to deliver?  
+        - Does order time affect delivery speed?  
+        - Are deliveries slower during festivals?  
+        """)
     with st.expander("🌍 Environment & External Factors"):
-        st.markdown("- How does traffic density impact delivery time?  \n- Do weather conditions affect delivery speed?  \n- How do restaurant vs. delivery locations affect time?  ")
+        st.markdown("""
+        - How does traffic density impact delivery time?  
+        - Do weather conditions affect delivery speed?  
+        - How do restaurant vs. delivery locations affect time?  
+        """)
     with st.expander("🚴 Delivery Personnel Metrics"):
-        st.markdown("- Who has the highest ratings and fastest deliveries?  \n- Does the age of the delivery person affect speed?  \n- Does vehicle condition impact delivery time?  ")
+        st.markdown("""
+        - Who has the highest ratings and fastest deliveries?  
+        - Does the age of the delivery person affect speed?  
+        - Does vehicle condition impact delivery time?  
+        """)
     with st.expander("📍 Geospatial Insights"):
-        st.markdown("- Which areas have the highest delays?  \n- What is the correlation between distance and time?  ")
+        st.markdown("""
+        - Which areas have the highest delays?  
+        - What is the correlation between distance and time?  
+        """)
+    st.markdown("---\n💡 Tip: Try typing your own custom questions!")
 
+# Right panel
 with col_right:
     st.subheader("🔍 Enter your question")
-    q_val = st.text_area("", placeholder="Type your question here...", key="question_input", height=80)
+    q_val = st.text_area("", value=st.session_state.get("question", ""), key="question_input", height=80)
 
     if st.button("🚀 Ask Question"):
         if not q_val.strip():
             st.warning("⚠️ Please enter a question.")
         else:
-            st.session_state["last_answer"] = chat_with_delivery_data(q_val, df)
+            answer = chat_with_delivery_data(q_val, df)
+            st.session_state["question"] = q_val
+            st.session_state["last_answer"] = answer
 
-    # Display answer immediately
+    # Show AI response **above**
     if "last_answer" in st.session_state and st.session_state["last_answer"]:
         st.subheader("🤖 AI Response")
-        st.markdown(st.session_state["last_answer"])
+        ans = st.session_state["last_answer"]
+        if isinstance(ans, pd.DataFrame):
+            st.dataframe(ans, use_container_width=True)
+        else:
+            st.success(ans)
